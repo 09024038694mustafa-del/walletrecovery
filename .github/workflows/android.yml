@@ -20,14 +20,28 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Change wrapper permissions
-      run: chmod +x ./gradlew
+    - name: Validate Gradle Wrapper
+      run: |
+        if [ ! -f "./gradlew" ]; then
+          echo "gradlew not found, using gradle directly"
+          gradle wrapper
+        else
+          chmod +x ./gradlew
+        fi
 
     - name: Build with Gradle
-      run: ./gradlew assembleDebug
+      run: |
+        if [ -f "./gradlew" ]; then
+          ./gradlew assembleDebug
+        else
+          gradle assembleDebug
+        fi
 
-    - name: Upload APK artifact
+    - name: Find and Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          */build/outputs/apk/debug/*.apk
+        if-no-files-found: error
