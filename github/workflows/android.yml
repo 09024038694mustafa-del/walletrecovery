@@ -1,4 +1,4 @@
-name: Android Build APK
+name: Fast Android Build APK
 
 on:
   push:
@@ -9,16 +9,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
     steps:
+      # ۱. Checkout
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ۲. Set up JDK
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
+      # ۳. Make Gradle Wrapper executable
+      - name: Make Gradle Wrapper executable
+        run: chmod +x ./gradlew
+
+      # ۴. Cache Gradle
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -29,16 +39,30 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ۴. ساخت Debug APK
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+      # ۵. Cache Android SDK
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/android-sdk
+          key: ${{ runner.os }}-android-sdk
 
-      # ۵. آماده‌سازی keystore برای Release
-      - name: Setup Release Keystore
+      # ۶. Install minimal Android SDK and build-tools
+      - name: Install Android SDK
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+          mkdir -p $ANDROID_SDK_ROOT
+          curl -s https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -o cmdline-tools.zip
+          unzip -q cmdline-tools.zip -d $ANDROID_SDK_ROOT
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
-      # ۶. ساخت Release APK
+      # ۷. Build Debug APK
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug -Pandroid.sdk.path=$ANDROID_SDK_ROOT
+
+      # ۸. Setup Release Keystore
+      - name: Setup Release Keystore
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+
+      # ۹. Build Release APK
       - name: Build Release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -46,12 +70,13 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           ./gradlew assembleRelease \
+            -Pandroid.sdk.path=$ANDROID_SDK_ROOT \
             -Pandroid.injected.signing.store.file=release.keystore \
             -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
             -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD
 
-      # ۷. آپلود هر دو APK
+      # ۱۰. Upload APKs
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
