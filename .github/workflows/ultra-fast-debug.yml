@@ -1,0 +1,76 @@
+name: Ultra Fast Debug APK Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
+    steps:
+      # ۱. Checkout کد
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ۲. Set up JDK
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ۳. بررسی و ساخت Gradle Wrapper در صورت عدم وجود
+      - name: Ensure Gradle Wrapper exists
+        run: |
+          if [ ! -f ./gradlew ]; then
+            echo "Gradle Wrapper not found. Generating..."
+            gradle wrapper
+          else
+            echo "Gradle Wrapper found."
+          fi
+
+      # ۴. دسترسی اجرایی به gradlew
+      - name: Make Gradle Wrapper executable
+        run: chmod +x ./gradlew
+
+      # ۵. Cache Gradle
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('/*.gradle*', '/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ۶. Cache minimal Android SDK
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/android-sdk
+          key: ${{ runner.os }}-android-sdk
+
+      # ۷. Install minimal Android SDK
+      - name: Install minimal Android SDK
+        run: |
+          mkdir -p $ANDROID_SDK_ROOT
+          curl -s https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -o cmdline-tools.zip
+          unzip -q cmdline-tools.zip -d $ANDROID_SDK_ROOT
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
+      # ۸. Build Debug APK
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug -Pandroid.sdk.path=$ANDROID_SDK_ROOT
+
+      # ۹. Upload Debug APK
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
